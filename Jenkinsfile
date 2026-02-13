@@ -1,18 +1,19 @@
 pipeline {
     agent any
-
+ 
     environment {
-        AWS_REGION = "us-east-1" 
+        AWS_REGION = "us-east-1"
         S3_BUCKET = "frontendapp101"
         CLOUDFRONT_DISTRIBUTION_ID = "E175I2YBDDSB62"
-        AWS_CREDENTIALS_ID = "d5729a17-0769-4e34-8d21-75a5519c9eae"
+       
     }
-
+ 
     options {
         timestamps()
     }
-
+ 
     stages {
+ 
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
@@ -20,67 +21,70 @@ pipeline {
                     url: 'https://github.com/kaviyarashugayu1997-maker/Frontend-application.git'
             }
         }
-
+ 
+        stage('Check Node & NPM') {
+            steps {
+                sh '''
+                  node -v
+                  npm -v
+                '''
+            }
+        }
+ 
         stage('Install & Build') {
             steps {
-                dir('Frontend') {
+                sh 'npm install'
+                sh 'npm run build'
+            }
+        }
+ 
+        stage('Verify Build Output') {
+            steps {
+                sh 'ls -la build'
+            }
+        }
+ 
+        stage('Deploy to S3') {
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'd5729a17-0769-4e34-8d21-75a5519c9eae'
+                ]]) {
                     sh '''
-                        echo "Checking package.json scripts..."
-                        cat package.json | grep scripts -A 5
-                        
-                        npm install
-                        
-                        # Try to build, if 'npm run build' fails, try 'npx vite build'
-                        npm run build || npx vite build || npx react-scripts build
+                      aws s3 sync build/ s3://${S3_BUCKET}/ \
+                        --delete \
+                        --region ${AWS_REGION}
                     '''
                 }
             }
         }
-
-        stage('Verify Build Output') {
-            steps {
-                dir('Frontend') {
-                    
-                    sh 'ls -F' 
-                }
-            }
-        }
-
-        stage('Deploy to S3') {
-            steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                                  credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
-                    dir('Frontend') {
-                        sh """
-                            if [ -d "dist" ]; then
-                                aws s3 sync dist/ s3://${S3_BUCKET}/ --delete --region ${AWS_REGION}
-                            elif [ -d "build" ]; then
-                                aws s3 sync build/ s3://${S3_BUCKET}/ --delete --region ${AWS_REGION}
-                            else
-                                echo "❌ ERROR: Neither dist/ nor build/ folder found!"
-                                exit 1
-                            fi
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Invalidate CloudFront') {
+ 
+        stage('Invalidate CloudFront Cache') {
             when {
-                expression { env.CLOUDFRONT_DISTRIBUTION_ID != "" }
+                expression { env.CLOUDFRONT_DISTRIBUTION_ID?.trim() }
             }
             steps {
-                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
-                                  credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
-                    sh "aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_DISTRIBUTION_ID} --paths '/*'"
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'd5729a17-0769-4e34-8d21-75a5519c9eae'
+                ]]) {
+                    sh '''
+                      aws cloudfront create-invalidation \
+                        --distribution-id ${CLOUDFRONT_DISTRIBUTION_ID} \
+                        --paths "/*"
+                    '''
                 }
             }
         }
     }
-
+ 
     post {
-        success { echo "✅ Deployment Successful!" }
-        failure { echo "❌ Deployment Failed. Check if 'build' script exists in package.json" }
+        success {
+            echo "✅ Frontend deployed successfully to S3 + CloudFront!"
+        }
+        failure {
+            echo "❌ Pipeline failed. Check Jenkins logs."
+        }
     }
 }
+
