@@ -36,8 +36,6 @@ pipeline {
                 
                 dir('Frontend') {
                     sh '''
-                      
-                        
                         npm install
                         npm run build
                     '''
