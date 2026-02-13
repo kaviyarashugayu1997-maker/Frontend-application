@@ -10,7 +10,6 @@ pipeline {
 
     options {
         timestamps()
-        
     }
 
     stages {
@@ -21,32 +20,29 @@ pipeline {
                     url: 'https://github.com/kaviyarashugayu1997-maker/Frontend-application.git'
             }
         }
-           
-        stage('Check Node & NPM') {
-            steps {
-                sh '''
-                  node -v
-                  npm -v
-                '''
-            }
-        }
 
         stage('Install & Build') {
             steps {
-                
                 dir('Frontend') {
                     sh '''
+                        echo "Checking package.json scripts..."
+                        cat package.json | grep scripts -A 5
+                        
                         npm install
-                        npm run build
+                        
+                        # Try to build, if 'npm run build' fails, try 'npx vite build'
+                        npm run build || npx vite build || npx react-scripts build
                     '''
                 }
             }
         }
 
-        stage('Verify Build') {
+        stage('Verify Build Output') {
             steps {
-               
-                sh 'ls -la Frontend/dist || ls -la Frontend/build'
+                dir('Frontend') {
+                    
+                    sh 'ls -F' 
+                }
             }
         }
 
@@ -55,12 +51,14 @@ pipeline {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
                                   credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                     dir('Frontend') {
-                        
                         sh """
                             if [ -d "dist" ]; then
                                 aws s3 sync dist/ s3://${S3_BUCKET}/ --delete --region ${AWS_REGION}
-                            else
+                            elif [ -d "build" ]; then
                                 aws s3 sync build/ s3://${S3_BUCKET}/ --delete --region ${AWS_REGION}
+                            else
+                                echo "❌ ERROR: Neither dist/ nor build/ folder found!"
+                                exit 1
                             fi
                         """
                     }
@@ -70,27 +68,19 @@ pipeline {
 
         stage('Invalidate CloudFront') {
             when {
-                expression { env.CLOUDFRONT_DISTRIBUTION_ID != null && env.CLOUDFRONT_DISTRIBUTION_ID != "" }
+                expression { env.CLOUDFRONT_DISTRIBUTION_ID != "" }
             }
             steps {
                 withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', 
                                   credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
-                    sh """
-                        aws cloudfront create-invalidation \
-                        --distribution-id ${CLOUDFRONT_DISTRIBUTION_ID} \
-                        --paths "/*"
-                    """
+                    sh "aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_DISTRIBUTION_ID} --paths '/*'"
                 }
             }
         }
     }
 
     post {
-        success {
-            echo "✅ Deployment Successful! Your frontend is live."
-        }
-        failure {
-            echo "❌ Pipeline failed. Please check the Console Output for errors."
-        }
+        success { echo "✅ Deployment Successful!" }
+        failure { echo "❌ Deployment Failed. Check if 'build' script exists in package.json" }
     }
 }
