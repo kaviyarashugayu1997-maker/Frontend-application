@@ -16,7 +16,7 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 git branch: 'main',
-                    credentialsId: 'Frontendapp101',
+                    credentialsId: 'username',
                     url: 'https://github.com/kaviyarashugayu1997-maker/Frontend-application.git'
             }
         }
