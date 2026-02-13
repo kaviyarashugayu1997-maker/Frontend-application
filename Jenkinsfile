@@ -21,14 +21,23 @@ pipeline {
                     url: 'https://github.com/kaviyarashugayu1997-maker/Frontend-application.git'
             }
         }
+           
+        stage('Check Node & NPM') {
+            steps {
+                sh '''
+                  node -v
+                  npm -v
+                '''
+            }
+        }
 
         stage('Install & Build') {
             steps {
                 
                 dir('Frontend') {
                     sh '''
-                        node -v
-                        npm -v
+                      
+                        
                         npm install
                         npm run build
                     '''
